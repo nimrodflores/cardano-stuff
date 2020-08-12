@@ -1,7 +1,7 @@
 #!/bin/bash
 
 session="demo"
-START_NODE_CMD="cardano-node run --database-path /home/nimrod/cnode/db/ --socket-path /home/nimrod/cnode/socket/socket --port 3000 --config /home/nimrod/cnode/files/mainnet-config.json --topology /home/nimrod/cnode/files/demo-node-topology.json"
+START_NODE_CMD="cardano-node run --database-path /home/nimrod/cnode/db/ --socket-path /home/nimrod/cnode/socket/socket --port 3000 --config /home/nimrod/cnode/files/mainnet-config.json --topology /home/nimrod/cnode/files/mainnet-topology.json"
 
 # kill existing session, in case there's any:
 killall cardano-node
