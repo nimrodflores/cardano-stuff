@@ -1,0 +1,21 @@
+--------------
+# updating
+--------------
+# be sure to stop the currently running cardano-node before doing the next steps.
+
+# switch to root user:
+sudo su
+
+# get pre-compiled binaries of 1.19.0
+cd /usr/local/bin;\
+wget https://staking.rocks/stuff/cardano-node-1.19;\
+wget https://staking.rocks/stuff/cardano-cli-1.19;\
+chmod 775 cardano-cli-1.19 cardano-node-1.19;\
+rm -vrf /usr/local/bin/cardano-cli /usr/local/bin/cardano-node;\
+ln /usr/local/bin/cardano-cli-1.19 /usr/local/bin/cardano-cli;\
+ln /usr/local/bin/cardano-node-1.19 /usr/local/bin/cardano-node
+
+# exit from root user and re-run the node:
+exit
+
+cd /home/arnel/cnode/scripts/; ./cnode-startall.sh
