@@ -1,0 +1,40 @@
+---------------------
+# updating to 1.20.0
+---------------------
+# be sure to stop the currently running cardano-node before doing the next steps.
+tmux a
+
+# then press "q" to stop the running node. then exit from tmux session:
+exit
+
+# switch to root user:
+sudo su
+
+# enter your password
+
+# get pre-compiled binaries of 1.20.0 and replace the old binaries in /usr/local/bin:
+cd /usr/local/bin;\
+rm -vrf cardano-node-* cardano-cli-*;\
+wget https://staking.rocks/stuff/cardano-node-1.20.0;\
+wget https://staking.rocks/stuff/cardano-cli-1.20.0;\
+chmod 775 cardano-cli-1.20.0 cardano-node-1.20.0;\
+rm -vrf /usr/local/bin/cardano-cli /usr/local/bin/cardano-node;\
+ln /usr/local/bin/cardano-cli-1.20.0 /usr/local/bin/cardano-cli;\
+ln /usr/local/bin/cardano-node-1.20.0 /usr/local/bin/cardano-node
+
+# exit from root user:
+exit
+
+# download the new start/stop scripts:
+cd /home/$USER/cnode/scripts/;\
+wget https://raw.githubusercontent.com/nimrodflores/cardano-stuff/master/demo/scripts/cnode-start.sh;\
+wget https://raw.githubusercontent.com/nimrodflores/cardano-stuff/master/demo/scripts/cnode-stop.sh;\
+rm -vf cnode-startall.sh; chmod +x ./*.sh
+
+
+# finally, re-run the node:
+/home/$USER/cnode/scripts/cnode-start.sh
+
+
+# new convenient way to gracefully stop the node:
+/home/$USER/cnode/scripts/cnode-stop.sh

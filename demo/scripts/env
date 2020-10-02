@@ -3,7 +3,7 @@
 CCLI=$(which cardano-cli)
 #
 # edit this as appropriate:
-CNODE_HOME=/home/nimrod/cnode
+CNODE_HOME=/home/$USER/cnode
 #
 #
 CONFIG=$CNODE_HOME/files/mainnet-config.json
