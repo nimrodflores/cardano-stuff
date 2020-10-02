@@ -25,6 +25,8 @@ ln /usr/local/bin/cardano-node-1.20.0 /usr/local/bin/cardano-node
 # exit from root user:
 exit
 
+
+
 # download the new start/stop scripts:
 cd /home/$USER/cnode/scripts/;\
 wget https://raw.githubusercontent.com/nimrodflores/cardano-stuff/master/demo/scripts/cnode-start.sh;\
