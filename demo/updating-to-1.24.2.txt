@@ -1,0 +1,21 @@
+---------------------
+# updating to 1.24.2
+---------------------
+# stop the currently running cardano-node before doing the next steps.
+tmux a
+
+# then press "q" to stop the running node. then exit from tmux session:
+exit
+
+
+# Run update script:
+curl -s https://raw.githubusercontent.com/nimrodflores/cardano-stuff/master/demo/scripts/update-node-1.24.2.sh | bash
+
+
+
+# finally, re-run the node:
+/home/$USER/cnode/scripts/cnode-start.sh
+
+
+# new convenient way to gracefully stop the node:
+/home/$USER/cnode/scripts/cnode-stop.sh
