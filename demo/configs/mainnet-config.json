@@ -4,7 +4,7 @@
   "ByronGenesisFile": "mainnet-byron-genesis.json",
   "ByronGenesisHash": "5f20df933584822601f9e3f8c024eb5eb252fe8cefb24d1317dc3d432e940ebb",
   "LastKnownBlockVersion-Alt": 0,
-  "LastKnownBlockVersion-Major": 2,
+  "LastKnownBlockVersion-Major": 3,
   "LastKnownBlockVersion-Minor": 0,
   "MaxKnownMajorProtocolVersion": 2,
   "Protocol": "Cardano",
@@ -40,130 +40,106 @@
   "TracingVerbosity": "NormalVerbosity",
   "TurnOnLogMetrics": true,
   "TurnOnLogging": true,
-  "ViewMode": "LiveView",
   "defaultBackends": [
-    "KatipBK"
+      "KatipBK"
   ],
   "defaultScribes": [
-    [
-      "StdoutSK",
-      "stdout"
-    ]
+      [
+          "StdoutSK",
+          "stdout"
+      ]
   ],
   "hasEKG": 12788,
   "hasPrometheus": [
-    "0.0.0.0",
-    1010
+      "0.0.0.0",
+      9010
   ],
   "minSeverity": "Info",
   "options": {
-    "mapBackends": {
-      "cardano.node-metrics": [
-        "EKGViewBK",
-        {
-          "kind": "UserDefinedBK",
-          "name": "LiveViewBackend"
-        }
-      ],
-      "cardano.node.BlockFetchDecision.peers": [
-        "EKGViewBK",
-        {
-          "kind": "UserDefinedBK",
-          "name": "LiveViewBackend"
-        }
-      ],
-      "cardano.node.ChainDB.metrics": [
-        "EKGViewBK",
-        {
-          "kind": "UserDefinedBK",
-          "name": "LiveViewBackend"
-        }
-      ],
-      "cardano.node.Forge.metrics": [
-        "EKGViewBK"
-      ],
-      "cardano.node.metrics": [
-        "EKGViewBK",
-        {
-          "kind": "UserDefinedBK",
-          "name": "LiveViewBackend"
-        }
-      ]
-    },
-    "mapSubtrace": {
-      "#ekgview": {
-        "contents": [
-          [
-            {
-              "contents": "cardano.epoch-validation.benchmark",
-              "tag": "Contains"
-            },
-            [
-              {
-                "contents": ".monoclock.basic.",
-                "tag": "Contains"
-              }
-            ]
+      "mapBackends": {
+          "cardano.node-metrics": [
+              "EKGViewBK"
           ],
-          [
-            {
-              "contents": "cardano.epoch-validation.benchmark",
-              "tag": "Contains"
-            },
-            [
-              {
-                "contents": "diff.RTS.cpuNs.timed.",
-                "tag": "Contains"
-              }
-            ]
+          "cardano.node.BlockFetchDecision.peers": [
+              "EKGViewBK"
           ],
-          [
-            {
-              "contents": "#ekgview.#aggregation.cardano.epoch-validation.benchmark",
-              "tag": "StartsWith"
-            },
-            [
-              {
-                "contents": "diff.RTS.gcNum.timed.",
-                "tag": "Contains"
-              }
-            ]
+          "cardano.node.ChainDB.metrics": [
+              "EKGViewBK"
+          ],
+          "cardano.node.Forge.metrics": [
+              "EKGViewBK"
+          ],
+          "cardano.node.metrics": [
+              "EKGViewBK"
+          ],
+          "cardano.node.resources": [
+              "EKGViewBK"
           ]
-        ],
-        "subtrace": "FilterTrace"
       },
-      "benchmark": {
-        "contents": [
-          "GhcRtsStats",
-          "MonotonicClock"
-        ],
-        "subtrace": "ObservableTrace"
-      },
-      "cardano.epoch-validation.utxo-stats": {
-        "subtrace": "NoTrace"
-      },
-      "cardano.node-metrics": {
-        "subtrace": "Neutral"
-      },
-      "cardano.node.metrics": {
-        "subtrace": "Neutral"
+      "mapSubtrace": {
+          "#ekgview": {
+              "contents": [
+                  [{
+                          "contents": "cardano.epoch-validation.benchmark",
+                          "tag": "Contains"
+                      },
+                      [{
+                          "contents": ".monoclock.basic.",
+                          "tag": "Contains"
+                      }]
+                  ],
+                  [{
+                          "contents": "cardano.epoch-validation.benchmark",
+                          "tag": "Contains"
+                      },
+                      [{
+                          "contents": "diff.RTS.cpuNs.timed.",
+                          "tag": "Contains"
+                      }]
+                  ],
+                  [{
+                          "contents": "#ekgview.#aggregation.cardano.epoch-validation.benchmark",
+                          "tag": "StartsWith"
+                      },
+                      [{
+                          "contents": "diff.RTS.gcNum.timed.",
+                          "tag": "Contains"
+                      }]
+                  ]
+              ],
+              "subtrace": "FilterTrace"
+          },
+          "benchmark": {
+              "contents": [
+                  "GhcRtsStats",
+                  "MonotonicClock"
+              ],
+              "subtrace": "ObservableTrace"
+          },
+          "cardano.epoch-validation.utxo-stats": {
+              "subtrace": "NoTrace"
+          },
+          "cardano.node-metrics": {
+              "subtrace": "Neutral"
+          },
+          "cardano.node.metrics": {
+              "subtrace": "Neutral"
+          }
       }
-    }
   },
   "rotation": {
-    "rpKeepFilesNum": 10,
-    "rpLogLimitBytes": 5000000,
-    "rpMaxAgeHours": 24
+      "rpKeepFilesNum": 10,
+      "rpLogLimitBytes": 5000000,
+      "rpMaxAgeHours": 24
   },
   "setupBackends": [
-    "KatipBK"
+      "KatipBK"
   ],
-  "setupScribes": [
-    {
-      "scFormat": "ScText",
-      "scKind": "StdoutSK",
-      "scName": "stdout",
-      "scRotation": null
-    }
+  "setupScribes": [{
+          "scFormat": "ScText",
+          "scKind": "StdoutSK",
+          "scName": "stdout",
+          "scRotation": null
+      }
   ]
 }
