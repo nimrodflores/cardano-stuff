@@ -3,9 +3,12 @@
 
 session="cnode"
 
+# stop the running gLiveView:
+tmux send-keys -t "$session:$session.1" q
 # stop the running cardano-node:
-tmux send-keys -t "$session" q
-sleep 3
+tmux send-keys -t "$session:$session.0" C-c
+# give it 5 seconds to shut down
+sleep 5
 
 # kill tmux session:
 tmux kill-session -t $session
