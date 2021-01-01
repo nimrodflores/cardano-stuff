@@ -146,31 +146,31 @@ fi
 # Version Check                                       #
 #######################################################
 clear
-echo "Guild LiveView version check..."
-if curl -s -m ${CURL_TIMEOUT} -o /tmp/gLiveView.sh "${URL}/gLiveView.sh" 2>/dev/null; then
-  GIT_VERSION=$(grep -r ^GLV_VERSION= /tmp/gLiveView.sh | cut -d'=' -f2)
-  : "${GIT_VERSION:=v0.0}"
-  if [[ "${GLV_VERSION}" != "${GIT_VERSION}" ]]; then
-    echo -e "\nA new version of Guild LiveView is available"
-    echo "Installed Version : ${GLV_VERSION}"
-    echo "Available Version : ${GIT_VERSION}"
-    echo -e "\nPress 'u' to update to latest version, or any other key to continue\n"
-    read -r -n 1 -s -p "" answer
-    if [[ "${answer}" = "u" ]]; then
-      TEMPL_CMD=$(awk '/^# Do NOT modify/,0' /tmp/gLiveView.sh)
-      STATIC_CMD=$(awk '/#!/{x=1}/^# Do NOT modify/{exit} x' "${PARENT}/gLiveView.sh")
-      printf '%s\n%s\n' "$STATIC_CMD" "$TEMPL_CMD" > /tmp/gLiveView.sh
-      mv -f "${PARENT}/gLiveView.sh" "${PARENT}/gLiveView.sh_bkp$(date +%s)" && \
-      cp -f /tmp/gLiveView.sh "${PARENT}/gLiveView.sh" && \
-      chmod 750 "${PARENT}/gLiveView.sh" && \
-      myExit 0 "Update applied successfully!\n\nPlease start Guild LiveView again!" || \
-      myExit 1 "${FG_RED}Update failed!${NC}\n\nPlease use prereqs.sh or manually download to update gLiveView"
-    fi
-  fi
-else
-  echo -e "\nFailed to download gLiveView.sh from GitHub, unable to perform version check!\n"
-  read -r -n 1 -s -p "press any key to proceed" answer
-fi
+#echo "Guild LiveView version check..."
+#if curl -s -m ${CURL_TIMEOUT} -o /tmp/gLiveView.sh "${URL}/gLiveView.sh" 2>/dev/null; then
+#  GIT_VERSION=$(grep -r ^GLV_VERSION= /tmp/gLiveView.sh | cut -d'=' -f2)
+#  : "${GIT_VERSION:=v0.0}"
+#  if [[ "${GLV_VERSION}" != "${GIT_VERSION}" ]]; then
+#    echo -e "\nA new version of Guild LiveView is available"
+#    echo "Installed Version : ${GLV_VERSION}"
+#    echo "Available Version : ${GIT_VERSION}"
+#    echo -e "\nPress 'u' to update to latest version, or any other key to continue\n"
+#    read -r -n 1 -s -p "" answer
+#    if [[ "${answer}" = "u" ]]; then
+#      TEMPL_CMD=$(awk '/^# Do NOT modify/,0' /tmp/gLiveView.sh)
+#      STATIC_CMD=$(awk '/#!/{x=1}/^# Do NOT modify/{exit} x' "${PARENT}/gLiveView.sh")
+#      printf '%s\n%s\n' "$STATIC_CMD" "$TEMPL_CMD" > /tmp/gLiveView.sh
+#      mv -f "${PARENT}/gLiveView.sh" "${PARENT}/gLiveView.sh_bkp$(date +%s)" && \
+#      cp -f /tmp/gLiveView.sh "${PARENT}/gLiveView.sh" && \
+#      chmod 750 "${PARENT}/gLiveView.sh" && \
+#      myExit 0 "Update applied successfully!\n\nPlease start Guild LiveView again!" || \
+#      myExit 1 "${FG_RED}Update failed!${NC}\n\nPlease use prereqs.sh or manually download to update gLiveView"
+#    fi
+#  fi
+#else
+#  echo -e "\nFailed to download gLiveView.sh from GitHub, unable to perform version check!\n"
+#  read -r -n 1 -s -p "press any key to proceed" answer
+#fi
 
 #######################################################
 # Validate config variables                           #
