@@ -6,7 +6,7 @@ START_NODE_CMD="cardano-node run \
 --port 3000 \
 --config /home/$USER/cnode/files/mainnet-config.json \
 --topology /home/$USER/cnode/files/mainnet-topology.json"
-START_GLIVE_CMD="/home/$USER/cnode/scripts/test/gLiveView.sh"
+START_GLIVE_CMD="/home/$USER/cnode/scripts/gLiveView.sh"
 
 # stop the running gLiveView, if there's any:
 tmux send-keys -t "$session:$session.1" q
