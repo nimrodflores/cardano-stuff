@@ -1,5 +1,5 @@
 #!/bin/bash
-#shellcheck disable=SC2009,SC2034,SC2059,SC2206,SC2086,SC2015
+#shellcheck disable=SC2009,SC2034,SC2059,SC2206,SC2086,SC2015,SC2154
 #shellcheck source=/dev/null
 
 ######################################
@@ -8,11 +8,12 @@
 ######################################
 
 NODE_NAME="PHRCK"                          # Change your node's name prefix here, keep at or below 19 characters!
-REFRESH_RATE=5                             # How often (in seconds) to refresh the view (additional time for processing and output may slow it down)
+REFRESH_RATE=2                             # How often (in seconds) to refresh the view (additional time for processing and output may slow it down)
 LEGACY_MODE=false                          # (true|false) If enabled unicode box-drawing characters will be replaced by standard ASCII characters
 RETRIES=3                                  # How many attempts to connect to running Cardano node before erroring out and quitting
 THEME="dark"                               # dark  = suited for terminals with a dark background
                                            # light = suited for terminals with a bright background
+NO_INTERNET_MODE="N"                       # To skip checking for auto updates or make outgoing connections to guild-operators github repository
 
 #####################################
 # Themes                            #
@@ -22,7 +23,7 @@ setTheme() {
   if [[ ${THEME} = "dark" ]]; then
     style_title=${FG_MAGENTA}${BOLD}      # style of title
     style_base=${FG_WHITE}                # default color for text and lines
-    style_values_1=${FG_CYAN}             # color of most live values
+    style_values_1=${FG_LBLUE}            # color of most live values
     style_values_2=${FG_GREEN}            # color of node name
     style_values_3=${STANDOUT}            # color of selected outgoing/incoming paging
     style_info=${FG_YELLOW}               # info messages
@@ -50,23 +51,24 @@ setTheme() {
 # Do NOT modify code below           #
 ######################################
 
-GLV_VERSION=v1.15
+GLV_VERSION=v1.19.4
 
 PARENT="$(dirname $0)"
 [[ -f "${PARENT}"/.env_branch ]] && BRANCH="$(cat ${PARENT}/.env_branch)" || BRANCH="master"
 
-# For those using auto update from version gLiveView 1.9 where RETRIES isnt set in user-defined variables
+# Set default for user variables added in recent versions (for those who may not necessarily have it due to upgrade)
 [[ -z "${RETRIES}" ]]  && RETRIES=3
+[[ -z "${NO_INTERNET_MODE}" ]] && NO_INTERNET_MODE="N"
 
 usage() {
-  cat <<EOF
-Usage: $(basename "$0") [-l] [-p] [-b <branch name>]
-Guild LiveView - An alternative cardano-node LiveView
-
--l    Activate legacy mode - standard ASCII characters instead of box-drawing characters
--p    Disable default CNCLI ping and revert to legacy tcptraceroute if available, else use regular ICMP ping.
--b    Use alternate branch to check for updates - only for testing/development (Default: Master)  
-EOF
+  cat <<-EOF
+		Usage: $(basename "$0") [-l] [-p] [-b <branch name>]
+		Guild LiveView - An alternative cardano-node LiveView
+		
+		-l    Activate legacy mode - standard ASCII characters instead of box-drawing characters
+		-p    Disable default CNCLI ping and revert to ss/tcptraceroute if available, else use regular ICMP ping.
+		-b    Use alternate branch to check for updates - only for testing/development (Default: Master)  
+		EOF
   exit 1
 }
 
@@ -76,45 +78,14 @@ while getopts :lpb: opt; do
     p ) DISABLE_CNCLI="true" ;;
     b ) BRANCH=${OPTARG}; echo "${BRANCH}" > "${PARENT}"/.env_branch ;;
     \? ) usage ;;
-    esac
+  esac
 done
 shift $((OPTIND -1))
-
-URL="https://raw.githubusercontent.com/cardano-community/guild-operators/${BRANCH}/scripts/cnode-helper-scripts"
-if curl -s -m 10 -o "${PARENT}"/env.tmp ${URL}/env; then
-  if [[ -f "${PARENT}"/env ]]; then
-    if [[ $(grep "_HOME=" "${PARENT}"/env) =~ ^#?([^[:space:]]+)_HOME ]]; then
-      vname=$(tr '[:upper:]' '[:lower:]' <<< ${BASH_REMATCH[1]})
-      sed -e "s@/opt/cardano/[c]node@/opt/cardano/${vname}@g" -e "s@[C]NODE_HOME@${BASH_REMATCH[1]}_HOME@g" -i "${PARENT}"/env.tmp
-    else
-      echo -e "Update failed! Please use prereqs.sh to force an update or manually download $(basename $0) + env from GitHub"
-      exit 1
-    fi
-    TEMPL_CMD=$(awk '/^# Do NOT modify/,0' "${PARENT}"/env)
-    TEMPL2_CMD=$(awk '/^# Do NOT modify/,0' "${PARENT}"/env.tmp)
-    if [[ "$(echo ${TEMPL_CMD} | sha256sum)" != "$(echo ${TEMPL2_CMD} | sha256sum)" ]]; then
-      cp "${PARENT}"/env "${PARENT}/env_bkp$(date +%s)"
-      STATIC_CMD=$(awk '/#!/{x=1}/^# Do NOT modify/{exit} x' "${PARENT}"/env)
-      printf '%s\n%s\n' "$STATIC_CMD" "$TEMPL2_CMD" > "${PARENT}"/env.tmp
-      mv "${PARENT}"/env.tmp "${PARENT}"/env
-    fi
-  else
-    mv "${PARENT}"/env.tmp "${PARENT}"/env
-  fi
-fi
-rm -f "${PARENT}"/env.tmp
-
-# source common env variables in case it was updated
-if ! . "${PARENT}"/env; then exit 1; fi
-
-tput smcup # Save screen
-tput civis # Disable cursor
-stty -echo # Disable user input
 
 # General exit handler
 cleanup() {
   [[ -n $1 ]] && err=$1 || err=$?
-  tput rmcup # restore screen
+  [[ $err -eq 0 ]] && clear
   tput cnorm # restore cursor
   [[ -n ${exit_msg} ]] && echo -e "\n${exit_msg}\n" || echo -e "\nGuild LiveView terminated, cleaning up...\n"
   tput sgr0  # turn off all attributes
@@ -130,47 +101,73 @@ myExit() {
   cleanup "$1"
 }
 
-if command -v "ss" &>/dev/null; then 
-  use_lsof='N'
-elif command -v "lsof" &>/dev/null; then 
-  use_lsof='Y'
-else
-  myExit 1 "'ss' and fallback 'lsof' commands missing, please install using latest prereqs.sh script or with your packet manager of choice.\nhttps://command-not-found.com/ss can be used to check package name to install."
-fi
-
-if ! command -v "tcptraceroute" &>/dev/null; then
-  myExit 1 "'tcptraceroute' command missing, please install using latest prereqs.sh script or with your packet manager of choice.\nhttps://command-not-found.com/tcptraceroute can be used to check package name to install."
-fi
-
 #######################################################
 # Version Check                                       #
 #######################################################
 clear
-#echo "Guild LiveView version check..."
-#if curl -s -m ${CURL_TIMEOUT} -o /tmp/gLiveView.sh "${URL}/gLiveView.sh" 2>/dev/null; then
-#  GIT_VERSION=$(grep -r ^GLV_VERSION= /tmp/gLiveView.sh | cut -d'=' -f2)
-#  : "${GIT_VERSION:=v0.0}"
-#  if [[ "${GLV_VERSION}" != "${GIT_VERSION}" ]]; then
-#    echo -e "\nA new version of Guild LiveView is available"
-#    echo "Installed Version : ${GLV_VERSION}"
-#    echo "Available Version : ${GIT_VERSION}"
-#    echo -e "\nPress 'u' to update to latest version, or any other key to continue\n"
-#    read -r -n 1 -s -p "" answer
-#    if [[ "${answer}" = "u" ]]; then
-#      TEMPL_CMD=$(awk '/^# Do NOT modify/,0' /tmp/gLiveView.sh)
-#      STATIC_CMD=$(awk '/#!/{x=1}/^# Do NOT modify/{exit} x' "${PARENT}/gLiveView.sh")
-#      printf '%s\n%s\n' "$STATIC_CMD" "$TEMPL_CMD" > /tmp/gLiveView.sh
-#      mv -f "${PARENT}/gLiveView.sh" "${PARENT}/gLiveView.sh_bkp$(date +%s)" && \
-#      cp -f /tmp/gLiveView.sh "${PARENT}/gLiveView.sh" && \
-#      chmod 750 "${PARENT}/gLiveView.sh" && \
-#      myExit 0 "Update applied successfully!\n\nPlease start Guild LiveView again!" || \
-#      myExit 1 "${FG_RED}Update failed!${NC}\n\nPlease use prereqs.sh or manually download to update gLiveView"
-#    fi
-#  fi
-#else
-#  echo -e "\nFailed to download gLiveView.sh from GitHub, unable to perform version check!\n"
-#  read -r -n 1 -s -p "press any key to proceed" answer
-#fi
+if [[ "${NO_INTERNET_MODE}" == "N" ]]; then
+  URL="https://raw.githubusercontent.com/cardano-community/guild-operators/${BRANCH}/scripts/cnode-helper-scripts"
+  if curl -s -f -m 10 -o "${PARENT}"/env.tmp ${URL}/env 2>/dev/null && [[ -f "${PARENT}"/env.tmp ]]; then
+    if [[ -f "${PARENT}"/env ]]; then
+      if [[ $(grep "_HOME=" "${PARENT}"/env) =~ ^#?([^[:space:]]+)_HOME ]]; then
+        vname=$(tr '[:upper:]' '[:lower:]' <<< ${BASH_REMATCH[1]})
+        sed -e "s@/opt/cardano/[c]node@/opt/cardano/${vname}@g" -e "s@[C]NODE_HOME@${BASH_REMATCH[1]}_HOME@g" -i "${PARENT}"/env.tmp
+      else
+        myExit 1 "\nUpdate for env file failed! Please use prereqs.sh to force an update or manually download $(basename $0) + env from GitHub\n"
+      fi
+      TEMPL_CMD=$(awk '/^# Do NOT modify/,0' "${PARENT}"/env)
+      TEMPL2_CMD=$(awk '/^# Do NOT modify/,0' "${PARENT}"/env.tmp)
+      if [[ "$(echo ${TEMPL_CMD} | sha256sum)" != "$(echo ${TEMPL2_CMD} | sha256sum)" ]]; then
+        . "${PARENT}"/env offline &>/dev/null # source in offline mode and ignore errors to get some common functions, sourced at a later point again
+        if getAnswer "\nThe static content from env file does not match with guild-operators repository, do you want to download the updated file?"; then
+          cp "${PARENT}"/env "${PARENT}/env_bkp$(printf '%(%s)T\n' -1)"
+          STATIC_CMD=$(awk '/#!/{x=1}/^# Do NOT modify/{exit} x' "${PARENT}"/env)
+          printf '%s\n%s\n' "$STATIC_CMD" "$TEMPL2_CMD" > "${PARENT}"/env.tmp
+          mv "${PARENT}"/env.tmp "${PARENT}"/env
+          echo -e "\nenv update successfully applied!"
+          waitToProceed
+        fi
+      fi
+    else
+      mv "${PARENT}"/env.tmp "${PARENT}"/env
+      myExit 0 "Common env file downloaded: ${PARENT}/env\nThis is a mandatory prerequisite, please set variables accordingly in User Variables section in the env file and restart Guild LiveView\n"
+    fi
+  fi
+  rm -f "${PARENT}"/env.tmp
+  # source common env variables in case it was updated
+  . "${PARENT}"/env
+  case $? in
+    1) myExit 1 ;;
+    2) waitToProceed ;;
+  esac
+
+  echo "Guild LiveView version check..."
+  if curl -s -f -m ${CURL_TIMEOUT} -o "${TMP_DIR}/gLiveView.sh" "${URL}/gLiveView.sh" 2>/dev/null; then
+    GIT_VERSION=$(grep -r ^GLV_VERSION= "${TMP_DIR}/gLiveView.sh" | cut -d'=' -f2)
+    : "${GIT_VERSION:=v0.0.0}"
+    if ! versionCheck "${GIT_VERSION}" "${GLV_VERSION}"; then
+      echo -e "\nA new version of Guild LiveView is available"
+      echo "Installed Version : ${GLV_VERSION}"
+      echo "Available Version : ${GIT_VERSION}"
+      if getAnswer "\nDo you want to upgrade to the latest version of Guild LiveView?"; then
+        TEMPL_CMD=$(awk '/^# Do NOT modify/,0' "${TMP_DIR}/gLiveView.sh")
+        STATIC_CMD=$(awk '/#!/{x=1}/^# Do NOT modify/{exit} x' "${PARENT}/gLiveView.sh")
+        printf '%s\n%s\n' "$STATIC_CMD" "$TEMPL_CMD" > "${TMP_DIR}/gLiveView.sh"
+        mv -f "${PARENT}/gLiveView.sh" "${PARENT}/gLiveView.sh_bkp$(printf '%(%s)T\n' -1)" && \
+        cp -f "${TMP_DIR}/gLiveView.sh" "${PARENT}/gLiveView.sh" && \
+        chmod 750 "${PARENT}/gLiveView.sh" && \
+        myExit 0 "Update applied successfully!\n\nPlease start Guild LiveView again!" || \
+        myExit 1 "${FG_RED}Update failed!${NC}\n\nPlease use prereqs.sh or manually download to update gLiveView"
+      fi
+    fi
+  else
+    echo -e "\nFailed to download gLiveView.sh from GitHub, unable to perform version check!"
+    waitToProceed
+  fi
+else
+  # source common env variables in offline mode
+  if ! . "${PARENT}"/env offline; then myExit 1; fi
+fi
 
 #######################################################
 # Validate config variables                           #
@@ -232,7 +229,7 @@ else
   UL=$(printf "${NC}\\u2518")
   DR=$(printf "${NC}\\u250C")
   DL=$(printf "${NC}\\u2510")
-  tdivider=$(printf "${NC}\\u250C" && printf "%0.s\\u2500" $(seq $((width-${#title}-4))) && printf "\\u252C" && printf "%0.s\\u2500" $(seq $((${#title}+2))) && printf "\\u2510")
+  tdivider=$(printf "${NC}\\u250C" && printf "%0.s\\u2500" $(seq $((width-${#title}-${#CNODE_PORT}-13))) && printf "\\u252C" && printf "%0.s\\u2500" $(seq $((${#CNODE_PORT}+8))) && printf "\\u252C" && printf "%0.s\\u2500" $(seq $((${#title}+2))) && printf "\\u2510")
   mdivider=$(printf "${NC}\\u251C" && printf "%0.s\\u2500" $(seq $((width-1))) && printf "\\u2524")
   m2divider=$(printf "${NC}\\u2502" && printf "%0.s-" $(seq $((width-1))) && printf "\\u2502")
   m3divider=$(printf "${NC}\\u2502" && printf "%0.s- " $(seq $((width/2))) && printf "\\u2502")
@@ -275,113 +272,33 @@ waitForInput() {
   fi
 }
 
-# Command    : showTimeLeft time_in_seconds
-# Description: calculation of days, hours, minutes and seconds
-timeLeft() {
-  local T=$1
-  local D=$((T/60/60/24))
-  local H=$((T/60/60%24))
-  local M=$((T/60%60))
-  local S=$((T%60))
-  (( D > 0 )) && printf '%d day' $D && {
-    (( D > 1 )) && printf 's ' || printf ' '
-  }
-  printf '%02d:%02d:%02d' $H $M $S
-}
-
-# Command    : getShelleyTransitionEpoch [1 = no user verification]
-# Description: Calculate shelley transition epoch
-getShelleyTransitionEpoch() {
-  calc_slot=0
-  byron_epochs=${epochnum}
-  shelley_epochs=0
-  while [[ ${byron_epochs} -ge 0 ]]; do
-    calc_slot=$(( (byron_epochs * BYRON_EPOCH_LENGTH) + (shelley_epochs * EPOCH_LENGTH) + slot_in_epoch ))
-    [[ ${calc_slot} -eq ${slotnum} ]] && break
-    ((byron_epochs--))
-    ((shelley_epochs++))
-  done
-  if [[ "${NWMAGIC}" = "764824073" ]]; then
-    shelley_transition_epoch=208
-  elif [[ ${calc_slot} -ne ${slotnum} || ${shelley_epochs} -eq 0 ]]; then
-    if [[ $1 -ne 1 ]]; then
-      clear
-      printf "\n ${style_status_3}Failed${NC} to get shelley transition epoch, calculations will not work correctly!"
-      printf "\n\n Possible causes:"
-      printf "\n   - Node in startup mode"
-      printf "\n   - Shelley era not reached"
-      printf "\n After successful node boot or when sync to shelley era has been reached, calculations will be correct"
-      printf "\n\n ${style_info}Press c to continue or any other key to quit${NC}"
-      read -r -n 1 -s -p "" answer
-      [[ "${answer}" != "c" ]] && myExit 1 "Guild LiveView terminated!"
-    fi
-    shelley_transition_epoch=-1
+# Command    : sizeOfProgressSlotSpan
+# Description: Determine and set the size and style of the progress bar based on remaining time
+# Return     : sets leader_bar_span as integer [432000, 43200, 3600, 300]
+#            : sets leader_bar_style using styling from theme
+setSizeAndStyleOfProgressBar() {
+  if [[ ${1} -gt 43200 ]]; then
+    leader_bar_span=432000
+    leader_bar_style="${style_status_1}"
+  elif [[ ${1} -gt 3600 ]]; then
+    leader_bar_span=43200
+    leader_bar_style="${style_status_2}"
+  elif [[ ${1} -gt 300 ]]; then
+    leader_bar_span=3600
+    leader_bar_style="${style_status_3}"
   else
-    shelley_transition_epoch=${byron_epochs}
-  fi
-}
-
-# Command    : getEpoch
-# Description: Offline calculation of current epoch based on genesis file
-getEpoch() {
-  current_time_sec=$(date -u +%s)
-  if [[ "${PROTOCOL}" = "Cardano" ]]; then
-    [[ shelley_transition_epoch -eq -1 ]] && echo 0 && return
-    byron_end_time=$(( BYRON_GENESIS_START_SEC + ( shelley_transition_epoch * BYRON_EPOCH_LENGTH * BYRON_SLOT_LENGTH ) ))
-    echo $(( shelley_transition_epoch + ( (current_time_sec - byron_end_time) / SLOT_LENGTH / EPOCH_LENGTH ) ))
-  else
-    echo $(( (current_time_sec - SHELLEY_GENESIS_START_SEC) / SLOT_LENGTH / EPOCH_LENGTH ))
-  fi
-}
-
-# Command    : getTimeUntilNextEpoch
-# Description: Offline calculation of time in seconds until next epoch
-timeUntilNextEpoch() {
-  current_time_sec=$(date -u +%s)
-  if [[ "${PROTOCOL}" = "Cardano" ]]; then
-    [[ shelley_transition_epoch -eq -1 ]] && echo 0 && return
-    echo $(( (shelley_transition_epoch * BYRON_SLOT_LENGTH * BYRON_EPOCH_LENGTH) + ( ( $(getEpoch) + 1 - shelley_transition_epoch ) * SLOT_LENGTH * EPOCH_LENGTH ) - current_time_sec + BYRON_GENESIS_START_SEC ))
-  else
-    echo $(( ( ( ( (current_time_sec - SHELLEY_GENESIS_START_SEC) / SLOT_LENGTH / EPOCH_LENGTH ) + 1 ) * SLOT_LENGTH * EPOCH_LENGTH ) - current_time_sec + SHELLEY_GENESIS_START_SEC ))
-  fi
-}
-
-# Command    : getSlotTipRef
-# Description: Get calculated slot number tip
-getSlotTipRef() {
-  current_time_sec=$(date -u +%s)
-  if [[ "${PROTOCOL}" = "Cardano" ]]; then
-    [[ shelley_transition_epoch -eq -1 ]] && echo 0 && return
-    # Combinator network
-    byron_slots=$(( shelley_transition_epoch * BYRON_EPOCH_LENGTH )) # since this point will only be reached once we're in Shelley phase
-    byron_end_time=$(( BYRON_GENESIS_START_SEC + ( shelley_transition_epoch * BYRON_EPOCH_LENGTH * BYRON_SLOT_LENGTH ) ))
-    if [[ "${current_time_sec}" -lt "${byron_end_time}" ]]; then
-      # In Byron phase
-      echo $(( ( current_time_sec - BYRON_GENESIS_START_SEC ) / BYRON_SLOT_LENGTH ))
-    else
-      # In Shelley phase
-      echo $(( byron_slots + (( current_time_sec - byron_end_time ) / SLOT_LENGTH ) ))
-    fi
-  else
-    # Shelley Mode only, no Byron slots
-    echo $(( ( current_time_sec - SHELLEY_GENESIS_START_SEC ) / SLOT_LENGTH ))
+    leader_bar_span=300
+    leader_bar_style="${style_status_4}"
   fi
 }
 
 # Command    : kesExpiration [pools remaining KES periods]
 # Description: Calculate KES expiration
 kesExpiration() {
-  current_time_sec=$(date -u +%s)
+  current_time_sec=$(printf '%(%s)T\n' -1)
   tip_ref=$(getSlotTipRef)
   expiration_time_sec=$(( current_time_sec - ( SLOT_LENGTH * (tip_ref % SLOTS_PER_KES_PERIOD) ) + ( SLOT_LENGTH * SLOTS_PER_KES_PERIOD * remaining_kes_periods ) ))
-  kes_expiration=$(date '+%F %T Z' --date=@${expiration_time_sec})
-}
-
-# Command    : slotInterval
-# Description: Calculate expected interval between blocks
-slotInterval() {
-  [[ $(echo "${DECENTRALISATION} < 0.5" | bc) -eq 1 ]] && local d=0.5 || local d=${DECENTRALISATION}
-  echo "(${SLOT_LENGTH} / ${ACTIVE_SLOTS_COEFF} / ${d}) + 0.5" | bc -l | awk '{printf "%.0f\n", $1}'
+  printf -v kes_expiration '%(%F %T %Z)T' ${expiration_time_sec}
 }
 
 # Command    : checkPeers [direction: in|out]
@@ -398,9 +315,9 @@ checkPeers() {
 
   if [[ ${direction} = "out" ]]; then
     if [[ ${use_lsof} = 'Y' ]]; then
-      peers=$(lsof -Pnl +M -i4 | grep ESTABLISHED | awk -v pid="${CNODE_PID}" -v port=":(${CNODE_PORT}|${EKG_PORT}|${prom_port})->" '$2 == pid && $9 !~ port {print $9}' | awk -F "->" '{print $2}')
+      peers=$(lsof -Pnl +M -i4 | grep ESTABLISHED | awk -v pid="${CNODE_PID}" -v port=":(${CNODE_PORT}|${EKG_PORT}|${PROM_PORT})->" '$2 == pid && $9 !~ port {print $9}' | awk -F "->" '{print $2}')
     else
-      peers=$(ss -tnp state established 2>/dev/null | grep "${CNODE_PID}," | awk -v port=":(${CNODE_PORT}|${EKG_PORT}|${prom_port})" '$3 !~ port {print $4}')
+      peers=$(ss -tnp state established 2>/dev/null | grep "${CNODE_PID}," | awk -v port=":(${CNODE_PORT}|${EKG_PORT}|${PROM_PORT})" '$3 !~ port {print $4}')
     fi
   else
     if [[ ${use_lsof} = 'Y' ]]; then
@@ -430,6 +347,8 @@ checkPeers() {
         else # cncli ping failed
           peerRTT=99999
         fi
+      elif command -v ss >/dev/null; then
+        peerRTT=$(ss -ni "dst ${peerIP}:${peerPORT}" | tail -1 | sed -e 's/.*rtt:\(.*\)\/.*.ato.*/\1/' | cut -d. -f1)
       elif command -v tcptraceroute >/dev/null; then
         checkPEER=$(tcptraceroute -n -S -f 255 -m 255 -q 1 -w 1 "${peerIP}" "${peerPORT}" 2>&1 | tail -n 1)
         if [[ ${checkPEER} = *'[open]'* ]]; then
@@ -439,7 +358,7 @@ checkPeers() {
         fi
       elif checkPEER=$(ping -c 2 -i 0.3 -w 1 "${peerIP}" 2>&1); then # Ping OK, show RTT
         peerRTT=$(echo "${checkPEER}" | tail -n 1 | cut -d/ -f5 | cut -d. -f1)
-      else # cncli & tcptraceroute missing and ping failed
+      else # cncli, ss & tcptraceroute missing and ping failed
         peerRTT=99999
       fi
       [[ ${peerRTT} -ne 99999 ]] && peerRTTSUM=$((peerRTTSUM + peerRTT))
@@ -454,7 +373,7 @@ checkPeers() {
     lastpeerIP=${peerIP}
 
     # Update counters
-      if [[ ${peerRTT} -lt 50    ]]; then ((peerCNT1++))
+    if [[ ${peerRTT} -lt 50    ]]; then ((peerCNT1++))
     elif [[ ${peerRTT} -lt 100   ]]; then ((peerCNT2++))
     elif [[ ${peerRTT} -lt 200   ]]; then ((peerCNT3++))
     elif [[ ${peerRTT} -lt 99999 ]]; then ((peerCNT4++))
@@ -484,21 +403,32 @@ checkPeers() {
 check_peers="false"
 show_peers="false"
 selected_direction="out"
-data=$(curl -s -m ${EKG_TIMEOUT} -H 'Accept: application/json' "http://${EKG_HOST}:${EKG_PORT}/" 2>/dev/null)
-epochnum=$(jq '.cardano.node.ChainDB.metrics.epoch.int.val //0' <<< "${data}")
+getNodeMetrics
 curr_epoch=${epochnum}
-slot_in_epoch=$(jq '.cardano.node.ChainDB.metrics.slotInEpoch.int.val //0' <<< "${data}")
-slotnum=$(jq '.cardano.node.ChainDB.metrics.slotNum.int.val //0' <<< "${data}")
-remaining_kes_periods=$(jq '.cardano.node.Forge.metrics.remainingKESPeriods.int.val //0' <<< "${data}")
-[[ "${PROTOCOL}" = "Cardano" ]] && getShelleyTransitionEpoch || shelley_transition_epoch=-2
-if ! prom_port=$(jq -er '.hasPrometheus[1]' "${CONFIG}" 2>/dev/null); then prom_port=0; fi
-#####################################
+getShelleyTransitionEpoch
+if [[ ${SHELLEY_TRANS_EPOCH} -eq -1 ]]; then
+  clear
+  printf "\n ${style_status_3}Failed${NC} to get shelley transition epoch, calculations will not work correctly!"
+  printf "\n\n Possible causes:"
+  printf "\n   - Node in startup mode"
+  printf "\n   - Shelley era not reached"
+  printf "\n After successful node boot or when sync to shelley era has been reached, calculations will be correct\n"
+  waitToProceed
+fi
+version=$("$(command -v cardano-node)" version)
+node_version=$(grep "cardano-node" <<< "${version}" | cut -d ' ' -f2)
+node_rev=$(grep "git rev" <<< "${version}" | cut -d ' ' -f3 | cut -c1-8)
+cncli_port=$(ss -tnp state established "( dport = :${CNODE_PORT} )" 2>/dev/null | grep cncli | awk '{print $3}' | cut -d: -f2)
+fail_count=0
+epoch_items_last=0
+
+tput civis # Disable cursor
+stty -echo # Disable user input
 
 clear
 tlines=$(tput lines) # set initial terminal lines
 tcols=$(tput cols)   # set initial terminal columns
 printf "${NC}"       # reset and set default color
-fail_count=0
 
 #####################################
 # MAIN LOOP                         #
@@ -533,52 +463,43 @@ while true; do
   line=0; tput cup 0 0 # reset position
 
   # Gather some data
-  version=$("$(command -v cardano-node)" version)
-  node_version=$(grep "cardano-node" <<< "${version}" | cut -d ' ' -f2)
-  node_rev=$(grep "git rev" <<< "${version}" | cut -d ' ' -f3 | cut -c1-8)
-  data=$(curl -s -m ${EKG_TIMEOUT} -H 'Accept: application/json' "http://${EKG_HOST}:${EKG_PORT}/" 2>/dev/null)
-  uptimens=$(jq '.rts.gc.wall_ms.val //0' <<< "${data}")
+  getNodeMetrics
   [[ ${fail_count} -eq ${RETRIES} ]] && myExit 1 "${style_status_3}COULD NOT CONNECT TO A RUNNING INSTANCE, ${RETRIES} FAILED ATTEMPTS IN A ROW!${NC}"
   if [[ ${uptimens} -le 0 ]]; then
     ((fail_count++))
     clear && tput cup 1 1
     printf "${style_status_3}Connection to node lost, retrying (${fail_count}/${RETRIES})!${NC}"
     waitForInput && continue
-  else
+  elif [[ ${fail_count} -ne 0 ]]; then # was failed but now ok, re-check 
+    CNODE_PID=$(pgrep -fn "[c]ardano-node*.*--port ${CNODE_PORT}")
+    version=$("$(command -v cardano-node)" version)
+    node_version=$(grep "cardano-node" <<< "${version}" | cut -d ' ' -f2)
+    node_rev=$(grep "git rev" <<< "${version}" | cut -d ' ' -f3 | cut -c1-8)
+    cncli_port=$(ss -tnp state established "( dport = :${CNODE_PORT} )" 2>/dev/null | grep cncli | awk '{print $3}' | cut -d: -f2)
     fail_count=0
   fi
+  
+  if [[ -z "${PROT_PARAMS}" ]]; then
+    getEraIdentifier
+    PROT_PARAMS="$(${CCLI} query protocol-parameters ${ERA_IDENTIFIER} ${NETWORK_IDENTIFIER} 2>/dev/null)"
+    if [[ -n "${PROT_PARAMS}" ]] && ! DECENTRALISATION=$(jq -re .decentralisationParam <<< ${PROT_PARAMS} 2>/dev/null); then DECENTRALISATION=0.5; fi
+  fi
+  
   if [[ ${show_peers} = "false" ]]; then
     if [[ ${use_lsof} = 'Y' ]]; then
       peers_in=$(lsof -Pnl +M -i4 | grep ESTABLISHED | awk -v pid="${CNODE_PID}" -v port=":${CNODE_PORT}->" '$2 == pid && $9 ~ port {print $9}' | awk -F "->" '{print $2}' | wc -l)
-      peers_out=$(lsof -Pnl +M -i4 | grep ESTABLISHED | awk -v pid="${CNODE_PID}" -v port=":(${CNODE_PORT}|${EKG_PORT}|${prom_port})->" '$2 == pid && $9 !~ port {print $9}' | awk -F "->" '{print $2}' | wc -l)
+      peers_out=$(lsof -Pnl +M -i4 | grep ESTABLISHED | awk -v pid="${CNODE_PID}" -v port=":(${CNODE_PORT}|${EKG_PORT}|${PROM_PORT})->" '$2 == pid && $9 !~ port {print $9}' | awk -F "->" '{print $2}' | wc -l)
     else
-      cncli_port=$(ss -tnp state established "( dport = :${CNODE_PORT} )" 2>/dev/null | grep cncli | awk '{print $3}' | cut -d: -f2)
       peers_in=$(ss -tnp state established 2>/dev/null | grep "${CNODE_PID}," | grep -v ":${cncli_port} " | awk -v port=":${CNODE_PORT}" '$3 ~ port {print}' | wc -l)
-      peers_out=$(ss -tnp state established 2>/dev/null | grep "${CNODE_PID}," | awk -v port=":(${CNODE_PORT}|${EKG_PORT}|${prom_port})" '$3 !~ port {print}' | wc -l)
+      peers_out=$(ss -tnp state established 2>/dev/null | grep "${CNODE_PID}," | awk -v port=":(${CNODE_PORT}|${EKG_PORT}|${PROM_PORT})" '$3 !~ port {print}' | wc -l)
     fi
-    blocknum=$(jq '.cardano.node.ChainDB.metrics.blockNum.int.val //0' <<< "${data}")
-    epochnum=$(jq '.cardano.node.ChainDB.metrics.epoch.int.val //0' <<< "${data}")
-    slot_in_epoch=$(jq '.cardano.node.ChainDB.metrics.slotInEpoch.int.val //0' <<< "${data}")
-    slotnum=$(jq '.cardano.node.ChainDB.metrics.slotNum.int.val //0' <<< "${data}")
-    density=$(jq -r '.cardano.node.ChainDB.metrics.density.real.val //0' <<< "${data}")
-    density=$(printf "%3.3e" "${density}"| cut -d 'e' -f1)
-    tx_processed=$(jq '.cardano.node.metrics.txsProcessedNum.int.val //0' <<< "${data}")
-    mempool_tx=$(jq '.cardano.node.metrics.txsInMempool.int.val //0' <<< "${data}")
-    mempool_bytes=$(jq '.cardano.node.metrics.mempoolBytes.int.val //0' <<< "${data}")
-    kesperiod=$(jq '.cardano.node.Forge.metrics.currentKESPeriod.int.val //0' <<< "${data}")
-    remaining_kes_periods=$(jq '.cardano.node.Forge.metrics.remainingKESPeriods.int.val //0' <<< "${data}")
-    isleader=$(jq '.cardano.node.metrics.Forge["node-is-leader"].int.val //0' <<< "${data}")
-    forged=$(jq '.cardano.node.metrics.Forge.forged.int.val //0' <<< "${data}")
-    adopted=$(jq '.cardano.node.metrics.Forge.adopted.int.val //0' <<< "${data}")
-    didntadopt=$(jq '.cardano.node.metrics.Forge["didnt-adopt"].int.val //0' <<< "${data}")
-    about_to_lead=$(jq '.cardano.node.metrics.Forge["forge-about-to-lead"].int.val //0' <<< "${data}")
     if [[ ${about_to_lead} -gt 0 ]]; then
       [[ ${nodemode} != "Core" ]] && clear && nodemode="Core"
     else
       [[ ${nodemode} != "Relay" ]] && clear && nodemode="Relay"
     fi
-    if [[ "${PROTOCOL}" = "Cardano" && ${shelley_transition_epoch} -eq -1 ]]; then # if Shelley transition epoch calc failed during start, try until successful
-      getShelleyTransitionEpoch 1
+    if [[ ${SHELLEY_TRANS_EPOCH} -eq -1 ]]; then # if Shelley transition epoch calc failed during start, try until successful
+      getShelleyTransitionEpoch
       kes_expiration="---"
     else
       kesExpiration
@@ -586,7 +507,7 @@ while true; do
     if [[ ${curr_epoch} -ne ${epochnum} ]]; then # only update on new epoch to save on processing
       curr_epoch=${epochnum}
       getEraIdentifier
-      PROT_PARAMS="$(${CCLI} query protocol-parameters ${ERA_IDENTIFIER} ${PROTOCOL_IDENTIFIER} ${NETWORK_IDENTIFIER} 2>/dev/null)"
+      PROT_PARAMS="$(${CCLI} query protocol-parameters ${ERA_IDENTIFIER} ${NETWORK_IDENTIFIER} 2>/dev/null)"
       if [[ -n "${PROT_PARAMS}" ]] && ! DECENTRALISATION=$(jq -re .decentralisationParam <<< ${PROT_PARAMS} 2>/dev/null); then DECENTRALISATION=0.5; fi
     fi
   fi
@@ -598,11 +519,15 @@ while true; do
   ## main section ##
   printf "${tdivider}\n" && ((line++))
   printf "${VL} Uptime: ${style_values_1}%s${NC}" "$(timeLeft $(( uptimens/1000 )))"
+  tput cup ${line} $(( width - ${#title} - 3 - ${#CNODE_PORT} - 9 ))
+  printf "${VL} Port: ${style_values_2}${CNODE_PORT} "
   tput cup ${line} $(( width - ${#title} - 3 ))
   printf "${VL} ${style_title}${title} ${VL}\n" && ((line++))
   printf "${m2divider}"
-  tput cup ${line} $(( width - ${#title} - 3 ))
+  tput cup ${line} $(( width - ${#title} - 3 - ${#CNODE_PORT} - 9 ))
   printf "${UR}"
+  printf "%0.s${HL}" $(seq $(( ${#CNODE_PORT} + 8 )))
+  printf "${UHL}"
   printf "%0.s${HL}" $(seq $(( ${#title} + 2 )))
   printf "${LVL}\n" && ((line++))
   
@@ -645,10 +570,11 @@ while true; do
     printf "${VL} 1. ${style_values_2}cncli${NC} - If available, this gives the most accurate" && tput cup ${line} ${width} && printf "${VL}\n" && ((line++))
     printf "${VL}    measure as it checks the entire handshake process against" && tput cup ${line} ${width} && printf "${VL}\n" && ((line++))
     printf "${VL}    the remote peer." && tput cup ${line} ${width} && printf "${VL}\n" && ((line++))
-    printf "${VL} 2. ${style_values_2}tcptraceroute${NC} - Sends a TCP SYN package to ping the" && tput cup ${line} ${width} && printf "${VL}\n" && ((line++))
+    printf "${VL} 2. ${style_values_2}ss${NC} - Sends a TCP SYN package to ping the" && tput cup ${line} ${width} && printf "${VL}\n" && ((line++))
     printf "${VL}    remote peer on the cardano-node port. Should give ~100%%" && tput cup ${line} ${width} && printf "${VL}\n" && ((line++))
     printf "${VL}    success rate." && tput cup ${line} ${width} && printf "${VL}\n" && ((line++))
-    printf "${VL} 3. ${style_values_2}ping${NC} - fallback method using ICMP ping against IP." && tput cup ${line} ${width} && printf "${VL}\n" && ((line++))
+    printf "${VL} 3. ${style_values_2}tcptraceroute${NC} - Same as ss" && tput cup ${line} ${width} && printf "${VL}\n" && ((line++))
+    printf "${VL} 4. ${style_values_2}ping${NC} - fallback method using ICMP ping against IP." && tput cup ${line} ${width} && printf "${VL}\n" && ((line++))
     printf "${VL}    Only work if the FW of remote peer accepts ICMP traffic." && tput cup ${line} ${width} && printf "${VL}\n" && ((line++))
     echo "${blank_line}" && ((line++))
     printf "${VL} For incoming connections, only ICMP ping is used as remote" && tput cup ${line} ${width} && printf "${VL}\n" && ((line++))
@@ -823,9 +749,13 @@ while true; do
     printf "${VL} to the expire date the values will change color." && tput cup ${line} ${width} && printf "${VL}\n" && ((line++))
     echo "${blank_line}" && ((line++))
     printf "${VL} If CNCLI is activated to calculate and store node blocks," && tput cup ${line} ${width} && printf "${VL}\n" && ((line++))
-    printf "${VL} data from this blocklog DB is displayed. If not, blocks" && tput cup ${line} ${width} && printf "${VL}\n" && ((line++))
-    printf "${VL} created is taken from EKG metrics. Invalid, Missed, Ghosted" && tput cup ${line} ${width} && printf "${VL}\n" && ((line++))
-    printf "${VL} and Stolen only showed if non-zero for the epoch." && tput cup ${line} ${width} && printf "${VL}\n" && ((line++))
+    printf "${VL} data from this blocklog DB is displayed, which includes a" && tput cup ${line} ${width} && printf "${VL}\n" && ((line++))
+    printf "${VL} timer and progress bar counting down until next slot leader. " && tput cup ${line} ${width} && printf "${VL}\n" && ((line++))
+    printf "${VL} The progress bar color indicates the time range. Green is" && tput cup ${line} ${width} && printf "${VL}\n" && ((line++))
+    printf "${VL} 1 epoch, Tan is 1 day, red is 1 Hour, Magenta is 5 minutes." && tput cup ${line} ${width} && printf "${VL}\n" && ((line++))
+    printf "${VL} If CNCLI is not activated blocks created is taken from EKG" && tput cup ${line} ${width} && printf "${VL}\n" && ((line++))
+    printf "${VL} metrics. Invalid, Missed, Ghosted and Stolen only showed" && tput cup ${line} ${width} && printf "${VL}\n" && ((line++))
+    printf "${VL} if non-zero for the epoch." && tput cup ${line} ${width} && printf "${VL}\n" && ((line++))
     echo "${blank_line}" && ((line++))
     printf "${VL} - Leader    : scheduled to make block at this slot" && tput cup ${line} ${width} && printf "${VL}\n" && ((line++))
     printf "${VL} - Ideal     : Expected/Ideal number of blocks assigned" && tput cup ${line} ${width} && printf "${VL}\n" && ((line++))
@@ -843,7 +773,7 @@ while true; do
     printf "${VL} - Stolen    : another pool has a valid block registered" && tput cup ${line} ${width} && printf "${VL}\n" && ((line++))
     printf "${VL}               on-chain for the same slot" && tput cup ${line} ${width} && printf "${VL}\n" && ((line++))
   else
-    if [[ ${shelley_transition_epoch} -eq -2 ]] || [[ ${shelley_transition_epoch} -ne -1 && ${epochnum} -ge ${shelley_transition_epoch} ]]; then
+    if [[ ${epochnum} -ge ${SHELLEY_TRANS_EPOCH} ]]; then
       epoch_progress=$(echo "(${slot_in_epoch}/${EPOCH_LENGTH})*100" | bc -l)        # in Shelley era or Shelley only TestNet
     else
       epoch_progress=$(echo "(${slot_in_epoch}/${BYRON_EPOCH_LENGTH})*100" | bc -l)  # in Byron era
@@ -854,11 +784,13 @@ while true; do
     printf "${VL} ${style_values_1}%s${NC} until epoch boundary (chain)%$((width-31-${#epoch_time_left}))s${VL}\n" "${epoch_time_left}" && ((line++))
 
     epoch_items=$(( $(printf %.0f "${epoch_progress}") * granularity / 100 ))
-    printf "${VL} ${style_values_1}"
-    for i in $(seq 0 $((granularity-1))); do
-      [[ $i -lt ${epoch_items} ]] && printf "${char_marked}" || printf "${NC}${char_unmarked}"
-    done
-    printf "${NC} ${VL}\n"; ((line++))
+    if [[ -z ${epoch_bar} || ${epoch_items} -ne ${epoch_items_last} ]]; then
+      epoch_bar=""; epoch_items_last=${epoch_items}
+      for i in $(seq 0 $((granularity-1))); do
+        [[ $i -lt ${epoch_items} ]] && epoch_bar+=$(printf "${char_marked}") || epoch_bar+=$(printf "${NC}${char_unmarked}")
+      done
+    fi
+    printf "${VL} ${style_values_1}${epoch_bar}${NC} ${VL}\n"; ((line++))
     
     printf "${VL}"; tput cup $((line++)) ${width}; printf "${VL}\n" # empty line
     
@@ -875,7 +807,7 @@ while true; do
     tput cup ${line} ${second_col}
     if [[ ${slotnum} -eq 0 ]]; then
       printf "Status     : ${style_info}%-${sec_col_value_size}s${NC}${VL}\n" "starting..."
-    elif [[ "${PROTOCOL}" = "Cardano" && ${shelley_transition_epoch} -eq -1 ]]; then
+    elif [[ ${SHELLEY_TRANS_EPOCH} -eq -1 ]]; then
       printf "Status     : ${style_info}%-${sec_col_value_size}s${NC}${VL}\n" "syncing..."
     elif [[ ${tip_diff} -le $(slotInterval) ]]; then
       printf "Tip (diff) : ${style_status_1}%-${sec_col_value_size}s${NC}${VL}\n" "${tip_diff} :)"
@@ -917,14 +849,23 @@ while true; do
       echo "${m2divider}" && ((line++))
       
       if [[ -f "${BLOCKLOG_DB}" ]]; then
-        invalid_cnt=$(sqlite3 "${BLOCKLOG_DB}" "SELECT COUNT(*) FROM blocklog WHERE epoch=${epochnum} AND status='invalid';" 2>/dev/null)
-        missed_cnt=$(sqlite3 "${BLOCKLOG_DB}" "SELECT COUNT(*) FROM blocklog WHERE epoch=${epochnum} AND status='missed';" 2>/dev/null)
-        ghosted_cnt=$(sqlite3 "${BLOCKLOG_DB}" "SELECT COUNT(*) FROM blocklog WHERE epoch=${epochnum} AND status='ghosted';" 2>/dev/null)
-        stolen_cnt=$(sqlite3 "${BLOCKLOG_DB}" "SELECT COUNT(*) FROM blocklog WHERE epoch=${epochnum} AND status='stolen';" 2>/dev/null)
-        confirmed_cnt=$(sqlite3 "${BLOCKLOG_DB}" "SELECT COUNT(*) FROM blocklog WHERE epoch=${epochnum} AND status='confirmed';" 2>/dev/null)
-        adopted_cnt=$(( $(sqlite3 "${BLOCKLOG_DB}" "SELECT COUNT(*) FROM blocklog WHERE epoch=${epochnum} AND status='adopted';" 2>/dev/null) + confirmed_cnt ))
-        leader_cnt=$(( $(sqlite3 "${BLOCKLOG_DB}" "SELECT COUNT(*) FROM blocklog WHERE epoch=${epochnum} AND status='leader';" 2>/dev/null) + adopted_cnt + invalid_cnt + missed_cnt + ghosted_cnt + stolen_cnt ))
-        OLDIFS=$IFS && IFS='|' && read -ra epoch_stats <<< "$(sqlite3 "${BLOCKLOG_DB}" "SELECT epoch_slots_ideal, max_performance FROM epochdata WHERE epoch=${epochnum};" 2>/dev/null)" && IFS=$OLDIFS
+        invalid_cnt=0; missed_cnt=0; ghosted_cnt=0; stolen_cnt=0; confirmed_cnt=0; adopted_cnt=0; leader_cnt=0
+        for status_type in $(sqlite3 "${BLOCKLOG_DB}" "SELECT status, COUNT(status) FROM blocklog WHERE epoch=${epochnum} GROUP BY status;" 2>/dev/null); do
+          IFS='|' read -ra status <<< ${status_type}
+          case ${status[0]} in
+            invalid) invalid_cnt=${status[1]} ;;
+            missed) missed_cnt=${status[1]} ;;
+            ghosted) ghosted_cnt=${status[1]} ;;
+            stolen) stolen_cnt=${status[1]} ;;
+            confirmed) confirmed_cnt=${status[1]} ;;
+            adopted) adopted_cnt=${status[1]} ;;
+            leader) leader_cnt=${status[1]} ;;
+          esac
+        done
+        adopted_cnt=$(( adopted_cnt + confirmed_cnt ))
+        leader_cnt=$(( leader_cnt + adopted_cnt + invalid_cnt + missed_cnt + ghosted_cnt + stolen_cnt ))
+        leader_next=$(sqlite3 "${BLOCKLOG_DB}" "SELECT at FROM blocklog WHERE datetime(at) > datetime('now') ORDER BY slot ASC LIMIT 1;" 2>/dev/null)
+        IFS='|' read -ra epoch_stats <<< "$(sqlite3 "${BLOCKLOG_DB}" "SELECT epoch_slots_ideal, max_performance FROM epochdata WHERE epoch=${epochnum};" 2>/dev/null)"
         if [[ ${#epoch_stats[@]} -eq 0 ]]; then epoch_stats=("-" "-"); else epoch_stats[1]="${epoch_stats[1]}%"; fi
 
         [[ ${invalid_cnt} -eq 0 ]] && invalid_fmt="${NC}" || invalid_fmt="${style_status_3}"
@@ -934,14 +875,32 @@ while true; do
         [[ ${adopted_cnt} -eq 0 ]] && adopted_fmt="${NC}" || adopted_fmt="${style_values_1}"
         if [[ ${confirmed_cnt} -eq 0 ]]; then confirmed_fmt="${NC}"; else [[ ${confirmed_cnt} -eq ${adopted_cnt} ]] && confirmed_fmt="${style_status_1}" || confirmed_fmt="${style_status_2}"; fi
         [[ ${leader_cnt} -eq 0 ]] && leader_fmt="${NC}" || leader_fmt="${style_values_1}"
-        
-        printf "${VL}${STANDOUT} BLOCKS ${NC}  Leader | Ideal | Luck       Adopted | Confirmed%$((width-58))s${VL}\n" "" && ((line++))
-        printf "${VL}%10s${leader_fmt}%-9s%-8s%-11s${adopted_fmt}%-10s${confirmed_fmt}%-9s${NC}%$((width-58))s${VL}\n" "" "${leader_cnt}" "${epoch_stats[0]}" "${epoch_stats[1]}" "${adopted_cnt}" "${confirmed_cnt}" "" && ((line++))
+
+        printf "${VL}${STANDOUT} BLOCKS ${NC}  Leader  | Ideal  | Luck    | Adopted | Confirmed%$((width-59))s${VL}\n" "" && ((line++))
+        printf "${VL}%10s${leader_fmt}%-10s%-9s%-10s${adopted_fmt}%-10s${confirmed_fmt}%-9s${NC}%$((width-59))s${VL}\n" "" "${leader_cnt}" "${epoch_stats[0]}" "${epoch_stats[1]}" "${adopted_cnt}" "${confirmed_cnt}" "" && ((line++))   
         
         if [[ ${invalid_cnt} -ne 0 || ${missed_cnt} -ne 0 || ${ghosted_cnt} -ne 0 || ${stolen_cnt} -ne 0 ]]; then
-          echo "${m3divider}" && ((line++))
           printf "${VL}%10sInvalid | Missed | Ghosted | Stolen%$((width-46))s${VL}\n" "" && ((line++))
           printf "${VL}%10s${invalid_fmt}%-10s${missed_fmt}%-9s${ghosted_fmt}%-10s${stolen_fmt}%-6s${NC}%$((width-46))s${VL}\n" "" "${invalid_cnt}" "${missed_cnt}" "${ghosted_cnt}" "${stolen_cnt}" "" && ((line++))
+        fi
+        
+        if [[ -n ${leader_next} ]]; then
+          leader_time_left=$((  $(date -u -d ${leader_next} +%s) - $(printf '%(%s)T\n' -1) ))
+          if [[ ${leader_time_left} -gt 0 ]]; then
+            setSizeAndStyleOfProgressBar ${leader_time_left}
+            leader_time_left_fmt="$(timeLeft ${leader_time_left})"
+            leader_progress=$(echo "(1-(${leader_time_left}/${leader_bar_span}))*100" | bc -l)
+            leader_items=$(( ($(printf %.0f "${leader_progress}") * granularity_small) / 100 ))
+            printf "${VL} ${style_values_1}%$((second_col-17))s${NC} until leader " "${leader_time_left_fmt}"
+            tput cup ${line} ${bar_col_small}
+            if [[ -z ${leader_bar} || ${leader_items} -ne ${leader_items_last} ]]; then
+              leader_bar=""; leader_items_last=${leader_items}
+              for i in $(seq 0 $((granularity_small-1))); do
+                [[ $i -lt ${leader_items} ]] && leader_bar+=$(printf "${leader_bar_style}${char_marked}") || leader_bar+=$(printf "${NC}${char_unmarked}")
+              done
+            fi
+            printf "${leader_bar}${NC}${VL}\n"; ((line++))
+          fi
         fi
       else
         printf "${VL}${STANDOUT} BLOCKS ${NC} %$((width-38))s %-6s | ${FG_GREEN}%-7s${NC} | ${FG_RED}%-7s${NC} ${VL}\n" "" "Leader" "Adopted" "Invalid" && ((line++))
@@ -953,6 +912,7 @@ while true; do
   [[ ${check_peers} = "true" ]] && check_peers=false && show_peers=true && clear && continue
   
   echo "${bdivider}" && ((line++))
+  printf " TG Announcement/Support channel: ${style_info}t.me/guild_operators_official${NC}\n\n" && line=$((line+2))
   if [[ ${show_peers} = "true" && ${show_peers_info} = "true" ]]; then
     printf " ${style_info}[esc/q] Quit${NC} | ${style_info}[b] Back to Peer Analysis${NC}"
     tput el
