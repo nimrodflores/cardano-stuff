@@ -6,8 +6,8 @@ sudo wget https://staking.rocks/stuff/cardano-node-1.24.2 -O /usr/local/bin/card
 sudo wget https://staking.rocks/stuff/cardano-cli-1.24.2 -O /usr/local/bin/cardano-cli-1.24.2
 sudo chmod 775 cardano-cli-1.24.2 cardano-node-1.24.2
 sudo rm -vrf /usr/local/bin/cardano-cli /usr/local/bin/cardano-node
-sudo ln /usr/local/bin/cardano-cli-1.24.2 /usr/local/bin/cardano-cli
-sudo ln /usr/local/bin/cardano-node-1.24.2 /usr/local/bin/cardano-node
+sudo ln -s /usr/local/bin/cardano-cli-1.24.2 /usr/local/bin/cardano-cli
+sudo ln -s /usr/local/bin/cardano-node-1.24.2 /usr/local/bin/cardano-node
 sudo chmod +x /usr/local/bin/cardano-cli /usr/local/bin/cardano-node
 
 # install possibly missing packages:
