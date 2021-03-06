@@ -11,6 +11,10 @@ exit
 # Run update script:
 curl -s https://raw.githubusercontent.com/nimrodflores/cardano-stuff/master/demo/scripts/update-node-1.25.1.sh | bash
 
+# for good measure:
+cd ~/cnode/scripts; dos2unix ./*;\
+export LD_LIBRARY_PATH="/usr/local/lib:$LD_LIBRARY_PATH"
+
 
 # finally, re-run the node:
 /home/$USER/cnode/scripts/cnode-start.sh

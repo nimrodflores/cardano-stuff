@@ -1,4 +1,5 @@
 #!/bin/bash
+export LD_LIBRARY_PATH="/usr/local/lib:$LD_LIBRARY_PATH"
 session="cnode"
 START_NODE_CMD="cardano-node run \
 --database-path /home/$USER/cnode/db/ \
